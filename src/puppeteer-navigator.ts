@@ -2,19 +2,24 @@ import { Page, ClickOptions } from "puppeteer";
 
 type SelectorType = number|string|((...args:any)=>boolean)
 type ElementMapFn = (element:ElementAny)=>any
-const defaultOptions = {
-    "waitUntilVisible": true,
-    "autoWait": true
+
+interface NavigatorOptions {
+    waitUntilVisile?: boolean
+    autoWait?: boolean
 }
 
 export interface ElementAny extends Element {
     [key:string]: any
 }
 
-export function makePageNavigator(page:Page, options = defaultOptions) {
+export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}) {
+    const options = { // default options
+        "waitUntilVisible": true,
+        "autoWait": true
+    }
+    Object.assign(options, customOptions) // override with any custom options
 
     async function gotoUrl(url:string, waitCondition?:SelectorType) {
-        console.log('navigating to url: ' + url)
         page.goto(url)
         // wait for the previous navigation to complete
         const pageResponse = await page.waitForNavigation()
@@ -24,9 +29,8 @@ export function makePageNavigator(page:Page, options = defaultOptions) {
         return pageResponse
     }
     
-    async function findElement(selector:string, valueMapFn:ElementMapFn) { return (await findElements(selector, valueMapFn))[0]}
-    
-    async function findElements(selector:string, valueMapFn:ElementMapFn) {
+    async function queryElement(selector:string, valueMapFn:ElementMapFn) { return (await queryElements(selector, valueMapFn))[0]}
+    async function queryElements(selector:string, valueMapFn:ElementMapFn) {
         const elements = await page.evaluate((selector, valueMapFnText) => {
             // Functions can not be passed as parameters to the browser page
             // So we pass in the function source text and recreate the function within the browser page
@@ -36,7 +40,6 @@ export function makePageNavigator(page:Page, options = defaultOptions) {
             // we must map them to new objects since the browser elements can not be serialized back to the Node environment
             return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
         }, selector, valueMapFn.toString());
-        console.log('found ' + elements.length + ' elements using selector: ' + selector)
         return elements;
     }
     
@@ -46,7 +49,6 @@ export function makePageNavigator(page:Page, options = defaultOptions) {
      * @param {*} downloadPath 
      */
     async function setDownloadPath(downloadPath:string) {
-        console.log('setting download path: ' + downloadPath)
         return await (page as any)._client.send('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: downloadPath});
     }
     
@@ -74,12 +76,20 @@ export function makePageNavigator(page:Page, options = defaultOptions) {
         await page.click(selector, clickOptions)
     }
 
+    async function type(selector:string, text:string, typeOptions?: { delay: number }) {
+        if (options.autoWait)
+            await wait(selector)
+        await page.type(selector, text, typeOptions)
+    }
+
     return {
         gotoUrl,
-        findElement,
-        findElements,
+        queryElement,
+        queryElements,
         setDownloadPath,
         scrollElementToBottom,
-        wait
+        wait,
+        click,
+        type
     }
 }
