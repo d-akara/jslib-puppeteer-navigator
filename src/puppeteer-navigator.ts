@@ -5,7 +5,8 @@ type ElementMapFn = (element:ElementAny)=>any
 
 interface NavigatorOptions {
     waitUntilVisile?: boolean
-    autoWait?: boolean
+    autoWait?: boolean,
+    useSimulatedClicks?:boolean
 }
 
 export interface ElementAny extends Element {
@@ -15,7 +16,8 @@ export interface ElementAny extends Element {
 export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}) {
     const options = { // default options
         "waitUntilVisible": true,
-        "autoWait": true
+        "autoWait": true,
+        "useSimulatedClicks": true
     }
     Object.assign(options, customOptions) // override with any custom options
 
@@ -73,13 +75,36 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
     async function click(selector:string, clickOptions?:ClickOptions) {
         if (options.autoWait)
             await wait(selector)
-        await page.click(selector, clickOptions)
+        if (options.useSimulatedClicks) {
+            const targetElement = await page.$(selector)
+            await page.evaluate(element => element.click(), targetElement)
+        } else {
+            await page.click(selector, clickOptions)
+        }
     }
 
     async function type(selector:string, text:string, typeOptions?: { delay: number }) {
         if (options.autoWait)
             await wait(selector)
         await page.type(selector, text, typeOptions)
+    }
+
+    async function select(selector:string, selectOption: {value?:string, label?:string}) {
+        if (options.autoWait)
+            await wait(selector)
+
+        const selectElement = await page.$(selector)
+        await page.evaluate((selectElement:Element, selectOption) => {
+            let optionElement:HTMLOptionElement
+            if (selectOption.label)
+                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).label === selectOption.label) as HTMLOptionElement
+            else
+                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).value === selectOption.value) as HTMLOptionElement
+
+            optionElement.selected = true;
+            const event = new Event('change', {bubbles: true});
+            selectElement.dispatchEvent(event);
+        }, selectElement, selectOption as any);
     }
 
     return {
@@ -90,6 +115,7 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         scrollElementToBottom,
         wait,
         click,
-        type
+        type,
+        select
     }
 }
