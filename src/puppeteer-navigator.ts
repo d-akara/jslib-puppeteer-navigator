@@ -31,6 +31,12 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         return pageResponse
     }
     
+    async function queryElementHandle(selector: string) {
+        if (selector.startsWith('//'))
+            return (await page.$x(selector))[0]
+        return await page.$(selector)
+    }
+
     async function queryElement(selector:string, valueMapFn:ElementMapFn) { return (await queryElements(selector, valueMapFn))[0]}
     async function queryElements(selector:string, valueMapFn:ElementMapFn) {
         const elements = await page.evaluate((selector, valueMapFnText) => {
@@ -75,11 +81,13 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
     async function click(selector:string, clickOptions?:ClickOptions) {
         if (options.autoWait)
             await wait(selector)
+        const targetElement = await queryElementHandle(selector)
+        if (!targetElement) throw new Error('Element not found ' + selector)
+
         if (options.useSimulatedClicks) {
-            const targetElement = await page.$(selector)
             await page.evaluate(element => element.click(), targetElement)
         } else {
-            await page.click(selector, clickOptions)
+            await targetElement.click(clickOptions)
         }
     }
 
@@ -96,10 +104,12 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         const selectElement = await page.$(selector)
         await page.evaluate((selectElement:Element, selectOption) => {
             let optionElement:HTMLOptionElement
+
+            // find matching option.  Remove any control characters from option values or labels
             if (selectOption.label)
-                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).label === selectOption.label) as HTMLOptionElement
+                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).label.replace(/[^\x00-\x7F]/g, '') === selectOption.label) as HTMLOptionElement
             else
-                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).value === selectOption.value) as HTMLOptionElement
+                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).value.replace(/[^\x00-\x7F]/g, "") === selectOption.value) as HTMLOptionElement
 
             optionElement.selected = true;
             const event = new Event('change', {bubbles: true});
