@@ -6,17 +6,19 @@ type ElementMapFn = (element:ElementAny)=>any
 interface NavigatorOptions {
     waitUntilVisile?: boolean
     autoWait?: boolean,
+    waitAfterAction?: number
     useSimulatedClicks?:boolean
 }
 
 export interface ElementAny extends Element {
     [key:string]: any
 }
-
+export type PageNavigator = ReturnType<typeof makePageNavigator>
 export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}) {
     const options = { // default options
         "waitUntilVisible": true,
         "autoWait": true,
+        "waitAfterAction": 0,
         "useSimulatedClicks": true
     }
     Object.assign(options, customOptions) // override with any custom options
@@ -27,6 +29,7 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         const pageResponse = await page.waitForNavigation()
         if (waitCondition)
             await wait(waitCondition)
+        else if (options.waitAfterAction) await wait(options.waitAfterAction)
 
         return pageResponse
     }
@@ -69,6 +72,7 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         await page.waitFor(delay);
     }
 
+    // TODO add wait that accepts a function that receives the selector element
     async function wait(condition:SelectorType) {
         if (typeof condition === 'string' || typeof condition ==='function') {
             await page.waitFor(condition, {visible:options.waitUntilVisible})
@@ -89,12 +93,16 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         } else {
             await targetElement.click(clickOptions)
         }
+
+        if (options.waitAfterAction) await wait(options.waitAfterAction)
     }
 
     async function type(selector:string, text:string, typeOptions?: { delay: number }) {
         if (options.autoWait)
             await wait(selector)
         await page.type(selector, text, typeOptions)
+
+        if (options.waitAfterAction) await wait(options.waitAfterAction)
     }
 
     async function select(selector:string, selectOption: {value?:string, label?:string}) {
@@ -115,6 +123,8 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
             const event = new Event('change', {bubbles: true});
             selectElement.dispatchEvent(event);
         }, selectElement, selectOption as any);
+
+        if (options.waitAfterAction) await wait(options.waitAfterAction)
     }
 
     return {
