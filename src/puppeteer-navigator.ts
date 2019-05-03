@@ -1,4 +1,4 @@
-import { Page, ClickOptions } from "puppeteer";
+import { Page, ClickOptions, PageFnOptions, JSHandle } from "puppeteer";
 
 type SelectorType = number|string|((...args:any)=>boolean)
 type ElementMapFn = (element:ElementAny)=>any
@@ -72,14 +72,18 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         await page.waitFor(delay);
     }
 
-    // TODO add wait that accepts a function that receives the selector element
     async function wait(condition:SelectorType) {
         if (typeof condition === 'string' || typeof condition ==='function') {
-            await page.waitFor(condition, {visible:options.waitUntilVisible})
+            return await page.waitFor(condition, {visible:options.waitUntilVisible})
         }
         if (typeof condition === 'number') {
             await page.waitFor(condition)
         }
+    }
+
+    async function waitFn(selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions) {
+        const selectElement = await wait(selector)
+        await page.waitForFunction(condition, options, selectElement as JSHandle)
     }
 
     async function click(selector:string, clickOptions?:ClickOptions) {
@@ -134,6 +138,7 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
         setDownloadPath,
         scrollElementToBottom,
         wait,
+        waitFn,
         click,
         type,
         select
