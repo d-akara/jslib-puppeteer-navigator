@@ -121,7 +121,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * @param condition function that receives element of selector as input.
      * @param options 'waitAfter' additinoal wait time after condition is true
      */
-    async function waitFn(selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter:number}) {
+    async function waitFn(selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter?:number}) {
         const selectElement = await wait(selector)
         await currentPage.waitForFunction(condition, options, selectElement as JSHandle)
         if (options && options.waitAfter)
