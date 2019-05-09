@@ -7,6 +7,7 @@ interface NavigatorOptions {
     waitUntilVisible?: boolean
     autoWait?: boolean,
     waitAfterAction?: number
+    waitIdleTime?:number
     useSimulatedClicks?:boolean
 }
 
@@ -20,10 +21,12 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
         "waitUntilVisible": true,
         "autoWait": true,
         "waitAfterAction": 0,
+        "waitIdleTime": 0,
         "useSimulatedClicks": true
     }
     updateOptions(customOptions)
-    
+    const requestMonitor = startActivityMonitor(currentPage)
+
     function updateOptions(customOptions:NavigatorOptions = {}) {
         Object.assign(options, customOptions) // override with any custom options
     }
@@ -32,6 +35,11 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * get the current puppeteer page object
      */
     function page() {return currentPage}
+
+    async function waitAfterAction() {
+        if (options.waitAfterAction) await wait(options.waitAfterAction)
+        if (options.waitIdleTime) await waitRequests(options.waitIdleTime)
+    }
 
     /**
      * Navigate to URL
@@ -44,7 +52,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
         const pageResponse = await currentPage.waitForNavigation()
         if (waitCondition)
             await wait(waitCondition)
-        else if (options.waitAfterAction) await wait(options.waitAfterAction)
+        else await waitAfterAction()
 
         return pageResponse
     }
@@ -129,6 +137,13 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
     }
 
     /**
+     * Wait for any network activity to complete
+     */
+    async function waitRequests(idleTime = options.waitIdleTime) {
+        return await requestMonitor.waitForPendingRequests(idleTime)
+    }
+
+    /**
      * Performs a click on a HTML field.
      * @param selector css selector or xpath
      * @param clickOptions ClickOptions
@@ -145,7 +160,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             await targetElement.click(clickOptions)
         }
 
-        if (options.waitAfterAction) await wait(options.waitAfterAction)
+        await waitAfterAction()
     }
 
     /**
@@ -159,7 +174,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             await wait(selector)
         await currentPage.type(selector, text, typeOptions)
 
-        if (options.waitAfterAction) await wait(options.waitAfterAction)
+        await waitAfterAction()
     }
 
     /**
@@ -188,7 +203,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             selectElement.dispatchEvent(event);
         }, selectElement, selectOption as any);
 
-        if (options.waitAfterAction) await wait(options.waitAfterAction)
+        await waitAfterAction()
     }
 
     return {
@@ -201,8 +216,66 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
         scrollElementToBottom,
         wait,
         waitFn,
+        waitRequests,
         click,
         type,
         select
     }
+}
+
+function startActivityMonitor(page:Page) {
+    let pendingRequests = 0
+    let lastRequestActivityTime = 0
+
+    page.on('request', onRequestStarted)
+    page.on('requestfinished', onRequestFinished)
+    page.on('requestfailed', onRequestFinished)
+  
+    function onRequestStarted()  {
+        ++pendingRequests
+        lastRequestActivityTime = Date.now()
+    }
+    function onRequestFinished() {
+        --pendingRequests
+        lastRequestActivityTime = Date.now()
+    }
+  
+    function stopMonitoring() {
+      page.removeListener('request', onRequestStarted)
+      page.removeListener('requestfinished', onRequestFinished)
+      page.removeListener('requestfailed', onRequestFinished)
+    }
+  
+    function pendingRequestCount() {return pendingRequests}
+    async function waitForPendingRequests(idleTime:number = 50) {
+        await page.waitFor(0) // give a chance for requets to start
+        return new Promise(async resolve => {
+            await pollUntilTrueOrTimeout(50, 30000, () => {
+                if (pendingRequestCount() > 0) return false
+                const currentIdleTime = Date.now() - lastRequestActivityTime
+                if (currentIdleTime > idleTime) return true
+                return false
+            })
+            resolve()
+        })
+    }
+    return {pendingRequestCount, stopMonitoring, waitForPendingRequests}
+}
+
+async function pollUntilTrueOrTimeout(interval:number, timeout:number, pollFn:() => boolean) {
+    let lastTime = Date.now()
+    return new Promise(resolve => {
+        const timer = setInterval(() => {
+            if (pollFn()) {
+                clearInterval(timer)
+                resolve()
+            }
+    
+            const elapsedTime = Date.now() - lastTime
+            if (elapsedTime > timeout) {
+                clearInterval(timer)
+                resolve()
+            }
+        }, interval)
+    })
 }
