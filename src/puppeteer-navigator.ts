@@ -5,9 +5,10 @@ type ElementMapFn = (element:ElementAny)=>any
 
 interface NavigatorOptions {
     waitUntilVisible?: boolean
-    autoWait?: boolean,
+    waitOnSelectors?: boolean,
     waitAfterAction?: number
     waitIdleTime?:number
+    waitIdleLoadTime?:number
     useSimulatedClicks?:boolean
 }
 
@@ -19,9 +20,10 @@ export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}
 function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {}) {
     const options:NavigatorOptions = { // default options
         "waitUntilVisible": true,
-        "autoWait": true,
+        "waitOnSelectors": true,
         "waitAfterAction": 0,
         "waitIdleTime": 0,
+        "waitIdleLoadTime": 0,
         "useSimulatedClicks": true
     }
     updateOptions(customOptions)
@@ -36,9 +38,9 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      */
     function page() {return currentPage}
 
-    async function waitAfterAction() {
+    async function waitAfter() {
+        if (options.waitIdleTime || options.waitIdleLoadTime) await waitActivity(options.waitIdleTime, options.waitIdleTime)
         if (options.waitAfterAction) await wait(options.waitAfterAction)
-        if (options.waitIdleTime) await waitRequests(options.waitIdleTime)
     }
 
     /**
@@ -46,13 +48,13 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * @param url 
      * @param waitCondition 
      */
-    async function gotoUrl(url:string, waitCondition?:SelectorType) {
+    async function goto(url:string, waitCondition?:SelectorType) {
         currentPage.goto(url)
         // wait for the previous navigation to complete
         const pageResponse = await currentPage.waitForNavigation()
         if (waitCondition)
             await wait(waitCondition)
-        else await waitAfterAction()
+        else await waitAfter()
 
         return pageResponse
     }
@@ -139,8 +141,8 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
     /**
      * Wait for any network activity to complete
      */
-    async function waitRequests(idleTime = options.waitIdleTime) {
-        return await requestMonitor.waitForPendingRequests(idleTime)
+    async function waitActivity(idleTime = options.waitIdleTime, idleLoadTime = options.waitIdleLoadTime) {
+        return await requestMonitor.waitForPendingActivity(idleTime, idleLoadTime)
     }
 
     /**
@@ -149,7 +151,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * @param clickOptions ClickOptions
      */
     async function click(selector:string, clickOptions?:ClickOptions) {
-        if (options.autoWait)
+        if (options.waitOnSelectors)
             await wait(selector)
         const targetElement = await queryElementHandle(selector)
         if (!targetElement) throw new Error('Element not found ' + selector)
@@ -160,7 +162,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             await targetElement.click(clickOptions)
         }
 
-        await waitAfterAction()
+        await waitAfter()
     }
 
     /**
@@ -170,11 +172,11 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * @param typeOptions 'delay' sets delay between each key typed
      */
     async function type(selector:string, text:string, typeOptions?: { delay: number }) {
-        if (options.autoWait)
+        if (options.waitOnSelectors)
             await wait(selector)
         await currentPage.type(selector, text, typeOptions)
 
-        await waitAfterAction()
+        await waitAfter()
     }
 
     /**
@@ -185,7 +187,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
      * @param selectOption 'value' matches the option value attribute. 'label' matches the option label attribute
      */
     async function select(selector:string, selectOption: {value?:string, label?:string}) {
-        if (options.autoWait)
+        if (options.waitOnSelectors)
             await wait(selector)
 
         const selectElement = await currentPage.$(selector)
@@ -203,20 +205,20 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             selectElement.dispatchEvent(event);
         }, selectElement, selectOption as any);
 
-        await waitAfterAction()
+        await waitAfter()
     }
 
     return {
         updateOptions,
         page,
-        gotoUrl,
+        gotoUrl: goto,
         queryElement,
         queryElements,
         setDownloadPath,
         scrollElementToBottom,
         wait,
         waitFn,
-        waitRequests,
+        waitRequests: waitActivity,
         click,
         type,
         select
@@ -226,52 +228,67 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
 function startActivityMonitor(page:Page) {
     let pendingRequests = 0
     let lastRequestActivityTime = 0
+    let lastDomLoadedTime = 0
 
     page.on('request', onRequestStarted)
     page.on('requestfinished', onRequestFinished)
     page.on('requestfailed', onRequestFinished)
+    page.on('domcontentloaded', onDomContentLoaded)
+    page.on('close', stopMonitoring)
   
     function onRequestStarted()  {
         ++pendingRequests
-        lastRequestActivityTime = Date.now()
     }
     function onRequestFinished() {
         --pendingRequests
         lastRequestActivityTime = Date.now()
+    }
+    function onDomContentLoaded() {
+        lastDomLoadedTime = Date.now()
     }
   
     function stopMonitoring() {
       page.removeListener('request', onRequestStarted)
       page.removeListener('requestfinished', onRequestFinished)
       page.removeListener('requestfailed', onRequestFinished)
+      page.removeListener('domcontentloaded', onDomContentLoaded)
+      page.removeListener('close', stopMonitoring)
     }
   
     function pendingRequestCount() {return pendingRequests}
-    async function waitForPendingRequests(idleTime:number = 50) {
-        await page.waitFor(0) // give a chance for requets to start
+    async function waitForPendingActivity(idleTime:number = 0, idleLoadTime:number = 0) {
         return new Promise(async resolve => {
-            await pollUntilTrueOrTimeout(50, 30000, () => {
+            await pollUntilTrueOrTimeout(50, 30000, elapsedTime => {
                 if (pendingRequestCount() > 0) return false
-                const currentIdleTime = Date.now() - lastRequestActivityTime
+
+                // if we have an idleLoadTime and the DOM was just loaded, use that as the idleTime
+                if (lastDomLoadedTime) idleTime = idleTime || idleLoadTime
+
+                const now = Date.now()
+                const currentIdleTime = now - lastRequestActivityTime
+                const timeSincePageLoaded = now - lastDomLoadedTime
+
                 if (currentIdleTime > idleTime) return true
                 return false
             })
+            lastDomLoadedTime = 0 // so we know if DOM has been loaded since last time we wait
             resolve()
         })
     }
-    return {pendingRequestCount, stopMonitoring, waitForPendingRequests}
+    return {pendingRequestCount, stopMonitoring, waitForPendingActivity}
 }
 
-async function pollUntilTrueOrTimeout(interval:number, timeout:number, pollFn:() => boolean) {
+async function pollUntilTrueOrTimeout(interval:number, timeout:number, pollFn:(elapsedTime:number) => boolean) {
     let lastTime = Date.now()
     return new Promise(resolve => {
         const timer = setInterval(() => {
-            if (pollFn()) {
+            const elapsedTime = Date.now() - lastTime
+
+            if (pollFn(elapsedTime)) {
                 clearInterval(timer)
                 resolve()
             }
     
-            const elapsedTime = Date.now() - lastTime
             if (elapsedTime > timeout) {
                 clearInterval(timer)
                 resolve()
