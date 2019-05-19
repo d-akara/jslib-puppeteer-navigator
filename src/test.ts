@@ -13,7 +13,7 @@ async function run() {
         const page = (await browser.pages())[0]
 
         const navigator = makePageNavigator(page)
-        await navigator.gotoUrl('http://localhost:8000')
+        await navigator.goto('http://localhost:8000')
         await navigator.select(`#pet-select`, {label:'Spider'})
         //await browser.close();
     });
