@@ -1,17 +1,19 @@
 {
   "name": "puppeteer-navigator",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Library to enhance use of Puppeteer",
   "main": "dist/puppeteer-navigator.js",
   "scripts": {
-    "test": "node dist/test.js"
+    "test": "node dist/test.js",
+    "doc": "jsdoc2md dist/puppeteer-navigator.js > dist/doc.md"
   },
   "author": "Chad Meadows",
   "license": "MIT",
   "devDependencies": {
     "typescript": "^3.4.5",
-    "@types/puppeteer": "1.12.3",
-    "puppeteer": "1.15.0"
+    "@types/puppeteer": "1.12.4",
+    "puppeteer": "1.15.0",
+    "jsdoc-to-markdown": "^5.0.0"
   },
   "types": "dist/puppeteer-navigator.d.ts"
 }

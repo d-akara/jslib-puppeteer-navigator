@@ -17,6 +17,11 @@ export interface ElementAny extends Element {
 }
 export type PageNavigator = ReturnType<typeof _makePageNavigator>
 export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}):PageNavigator {return _makePageNavigator(page, customOptions)}
+/**
+ * Create instance of PageNavigator
+ * @param currentPage 
+ * @param customOptions 
+ */
 function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {}) {
     const options:NavigatorOptions = { // default options
         "waitUntilVisible": true,
@@ -39,7 +44,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
     function page() {return currentPage}
 
     async function waitAfter() {
-        if (options.waitIdleTime || options.waitIdleLoadTime) await waitActivity(options.waitIdleTime, options.waitIdleTime)
+        if (options.waitIdleTime || options.waitIdleLoadTime) await waitActivity(options.waitIdleTime, options.waitIdleLoadTime)
         if (options.waitAfterAction) await wait(options.waitAfterAction)
     }
 
@@ -211,14 +216,14 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
     return {
         updateOptions,
         page,
-        gotoUrl: goto,
+        goto,
         queryElement,
         queryElements,
         setDownloadPath,
         scrollElementToBottom,
         wait,
         waitFn,
-        waitRequests: waitActivity,
+        waitActivity,
         click,
         type,
         select
@@ -256,13 +261,14 @@ function startActivityMonitor(page:Page) {
     }
   
     function pendingRequestCount() {return pendingRequests}
+    // possible further improvements using: https://github.com/GoogleChromeLabs/puppeteer-examples/blob/master/hash_navigation.js
     async function waitForPendingActivity(idleTime:number = 0, idleLoadTime:number = 0) {
         return new Promise(async resolve => {
             await pollUntilTrueOrTimeout(50, 30000, elapsedTime => {
                 if (pendingRequestCount() > 0) return false
 
                 // if we have an idleLoadTime and the DOM was just loaded, use that as the idleTime
-                if (lastDomLoadedTime) idleTime = idleTime || idleLoadTime
+                if (lastDomLoadedTime) idleTime = idleLoadTime || idleTime
 
                 const now = Date.now()
                 const currentIdleTime = now - lastRequestActivityTime
