@@ -1,14 +1,23 @@
 import { Page, ClickOptions, PageFnOptions, JSHandle } from "puppeteer";
 
-type SelectorType = number|string|((...args:any)=>boolean)
-type ElementMapFn = (element:ElementAny)=>any
+export type SelectorType = number|string|((...args:any)=>boolean)
+export type ElementMapFn = (element:ElementAny)=>any
 
-interface NavigatorOptions {
+/**
+ * Options generally applied to all actions
+ */
+export interface NavigatorOptions {
+    /** wait until element is visible on selection actions.  default true. */
     waitUntilVisible?: boolean
+    /** wait until the selector is found before performing actions. default true*/
     waitOnSelectors?: boolean,
+    /** wait milliseconds after all actions. default 0 */
     waitAfterAction?: number
+    /** wait milliseconds after all network activity has stopped. default 0 */
     waitIdleTime?:number
+    /** wait milliseconds after any page load. default 0 */
     waitIdleLoadTime?:number
+    /** send click event directly to element vs using mouse cursor initiated click. default true */
     useSimulatedClicks?:boolean
 }
 
@@ -38,195 +47,182 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
         Object.assign(options, customOptions) // override with any custom options
     }
 
-    /**
-     * get the current puppeteer page object
-     */
-    function page() {return currentPage}
-
-    async function waitAfter() {
-        if (options.waitIdleTime || options.waitIdleLoadTime) await waitActivity(options.waitIdleTime, options.waitIdleLoadTime)
-        if (options.waitAfterAction) await wait(options.waitAfterAction)
-    }
-
-    /**
-     * Navigate to URL
-     * @param url 
-     * @param waitCondition 
-     */
-    async function goto(url:string, waitCondition?:SelectorType) {
-        currentPage.goto(url)
-        // wait for the previous navigation to complete
-        const pageResponse = await currentPage.waitForNavigation()
-        if (waitCondition)
-            await wait(waitCondition)
-        else await waitAfter()
-
-        return pageResponse
-    }
-    
-    /**
-     * Queries an element using css selector or xpath
-     * Assumes xpath expression starts with '//'
-     * @param selector css selector or xpath
-     */
-    async function queryElementHandle(selector: string) {
-        if (selector.startsWith('//'))
-            return (await currentPage.$x(selector))[0]
-        return await currentPage.$(selector)
-    }
-
-    /**
-     * Query element using selector and uses the provided function to map a return value
-     * @param selector css selector
-     * @param valueMapFn function to map element to return value
-     */
-    async function queryElement(selector:string, valueMapFn:ElementMapFn) { return (await queryElements(selector, valueMapFn))[0]}
-    /**
-     * Queries elements using selector and uses the provided function to map a list of return values
-     * @param selector css selector
-     * @param valueMapFn function to map elements to values to be returned
-     */
-    async function queryElements(selector:string, valueMapFn:ElementMapFn) {
-        const elements = await currentPage.evaluate((selector, valueMapFnText) => {
-            // Functions can not be passed as parameters to the browser page
-            // So we pass in the function source text and recreate the function within the browser page
-            const valueMapFn = new Function(' return (' + valueMapFnText + ').apply(null, arguments)');
-    
-            // create an array of all the found elements and map them using the supplied function
-            // we must map them to new objects since the browser elements can not be serialized back to the Node environment
-            return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
-        }, selector, valueMapFn.toString());
-        return elements;
-    }
-    
-    /**
-     * Sets the default chrome puppeteer download path
-     * See - https://github.com/GoogleChrome/puppeteer/issues/299
-     * @param {*} downloadPath 
-     */
-    async function setDownloadPath(downloadPath:string) {
-        return await (currentPage as any)._client.send('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: downloadPath});
-    }
-    
-    async function scrollElementToBottom(elementSelector:string, delay:number) {
-        await currentPage.evaluate( selector => {
-            const element = document.querySelector(selector);
-            element.scrollTop = 100000; // use large number to force to bottom.  TODO - determine if there is an exact way to get this value
-        }, elementSelector );
-    
-        await currentPage.waitFor(delay);
-    }
-
-    /**
-     * Waits for element to be visible, function to be true or timeout if number
-     * @param condition css selector, xpath or function
-     */
-    async function wait(condition:SelectorType) {
-        if (typeof condition === 'string' || typeof condition ==='function') {
-            return await currentPage.waitFor(condition, {visible:options.waitUntilVisible})
-        }
-        if (typeof condition === 'number') {
-            await currentPage.waitFor(condition)
-        }
-    }
-
-    /**
-     * Waits for condition to be true
-     * @param selector css selector, xpath or function
-     * @param condition function that receives element of selector as input.
-     * @param options 'waitAfter' additinoal wait time after condition is true
-     */
-    async function waitFn(selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter?:number}) {
-        const selectElement = await wait(selector)
-        await currentPage.waitForFunction(condition, options, selectElement as JSHandle)
-        if (options && options.waitAfter)
-            await wait(options.waitAfter)
-    }
-
-    /**
-     * Wait for any network activity to complete
-     */
-    async function waitActivity(idleTime = options.waitIdleTime, idleLoadTime = options.waitIdleLoadTime) {
-        return await requestMonitor.waitForPendingActivity(idleTime, idleLoadTime)
-    }
-
-    /**
-     * Performs a click on a HTML field.
-     * @param selector css selector or xpath
-     * @param clickOptions ClickOptions
-     */
-    async function click(selector:string, clickOptions?:ClickOptions) {
-        if (options.waitOnSelectors)
-            await wait(selector)
-        const targetElement = await queryElementHandle(selector)
-        if (!targetElement) throw new Error('Element not found ' + selector)
-
-        if (options.useSimulatedClicks) {
-            await currentPage.evaluate(element => element.click(), targetElement)
-        } else {
-            await targetElement.click(clickOptions)
-        }
-
-        await waitAfter()
-    }
-
-    /**
-     * Types text into a HTML field
-     * @param selector css selector
-     * @param text type text into field
-     * @param typeOptions 'delay' sets delay between each key typed
-     */
-    async function type(selector:string, text:string, typeOptions?: { delay: number }) {
-        if (options.waitOnSelectors)
-            await wait(selector)
-        await currentPage.type(selector, text, typeOptions)
-
-        await waitAfter()
-    }
-
-    /**
-     * Selects an option within a HTML list.
-     * Filters out any control characters that might be in the list label or value before attempting to match.
-     * 
-     * @param selector css selector
-     * @param selectOption 'value' matches the option value attribute. 'label' matches the option label attribute
-     */
-    async function select(selector:string, selectOption: {value?:string, label?:string}) {
-        if (options.waitOnSelectors)
-            await wait(selector)
-
-        const selectElement = await currentPage.$(selector)
-        await currentPage.evaluate((selectElement:Element, selectOption) => {
-            let optionElement:HTMLOptionElement
-
-            // find matching option.  Remove any control characters from option values or labels
-            if (selectOption.label)
-                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).label.replace(/[^\x00-\x7F]/g, '') === selectOption.label) as HTMLOptionElement
-            else
-                optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).value.replace(/[^\x00-\x7F]/g, "") === selectOption.value) as HTMLOptionElement
-
-            optionElement.selected = true;
-            const event = new Event('change', {bubbles: true});
-            selectElement.dispatchEvent(event);
-        }, selectElement, selectOption as any);
-
-        await waitAfter()
+    async function waitAfter(pageNavigator: PageNavigator) {
+        if (options.waitIdleTime || options.waitIdleLoadTime) await pageNavigator.waitActivity(options.waitIdleTime, options.waitIdleLoadTime)
+        if (options.waitAfterAction) await pageNavigator.wait(options.waitAfterAction)
     }
 
     return {
         updateOptions,
-        page,
-        goto,
-        queryElement,
-        queryElements,
-        setDownloadPath,
-        scrollElementToBottom,
-        wait,
-        waitFn,
-        waitActivity,
-        click,
-        type,
-        select
+        /**
+         * get the current puppeteer page object
+         */
+        page: function() {return currentPage},
+    
+        /**
+         * Navigate to URL
+         * @param url 
+         * @param waitCondition 
+         */
+        goto: async function (url:string, waitCondition?:SelectorType) {
+            currentPage.goto(url)
+            // wait for the previous navigation to complete
+            const pageResponse = await currentPage.waitForNavigation()
+            if (waitCondition)
+                await this.wait(waitCondition)
+            else await waitAfter(this)
+    
+            return pageResponse
+        },
+        
+        /**
+         * Queries an element using css selector or xpath
+         * Assumes xpath expression starts with '//'
+         * @param selector css selector or xpath
+         */
+        queryElementHandle: async function (selector: string) {
+            if (selector.startsWith('//'))
+                return (await currentPage.$x(selector))[0]
+            return await currentPage.$(selector)
+        },
+    
+        /**
+         * Query element using selector and uses the provided function to map a return value
+         * @param selector css selector
+         * @param valueMapFn function to map element to return value
+         */
+        queryElement: async function (selector:string, valueMapFn:ElementMapFn) { return (await this.queryElements(selector, valueMapFn))[0]},
+        /**
+         * Queries elements using selector and uses the provided function to map a list of return values
+         * @param selector css selector
+         * @param valueMapFn function to map elements to values to be returned
+         */
+        queryElements: async function (selector:string, valueMapFn:ElementMapFn) {
+            const elements = await currentPage.evaluate((selector, valueMapFnText) => {
+                // Functions can not be passed as parameters to the browser page
+                // So we pass in the function source text and recreate the function within the browser page
+                const valueMapFn = new Function(' return (' + valueMapFnText + ').apply(null, arguments)');
+        
+                // create an array of all the found elements and map them using the supplied function
+                // we must map them to new objects since the browser elements can not be serialized back to the Node environment
+                return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
+            }, selector, valueMapFn.toString());
+            return elements;
+        },
+        
+        /**
+         * Sets the default chrome puppeteer download path
+         * See - https://github.com/GoogleChrome/puppeteer/issues/299
+         * @param {*} downloadPath 
+         */
+        setDownloadPath: async function (downloadPath:string) {
+            return await (currentPage as any)._client.send('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: downloadPath});
+        },
+        
+        scrollElementToBottom: async function (elementSelector:string, delay:number) {
+            await currentPage.evaluate( selector => {
+                const element = document.querySelector(selector);
+                element.scrollTop = 100000; // use large number to force to bottom.  TODO - determine if there is an exact way to get this value
+            }, elementSelector );
+        
+            await currentPage.waitFor(delay);
+        },
+    
+        /**
+         * Waits for element to be visible, function to be true or timeout if number
+         * @param condition css selector, xpath or function
+         */
+        wait: async function (condition:SelectorType) {
+            if (typeof condition === 'string' || typeof condition ==='function') {
+                return await currentPage.waitFor(condition, {visible:options.waitUntilVisible})
+            }
+            if (typeof condition === 'number') {
+                await currentPage.waitFor(condition)
+            }
+        },
+    
+        /**
+         * Waits for condition to be true
+         * @param selector css selector, xpath or function
+         * @param condition function that receives element of selector as input.
+         * @param options 'waitAfter' additinoal wait time after condition is true
+         */
+        waitFn: async function (selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter?:number}) {
+            const selectElement = await this.wait(selector)
+            await currentPage.waitForFunction(condition, options, selectElement as JSHandle)
+            if (options && options.waitAfter)
+                await this.wait(options.waitAfter)
+        },
+    
+        /**
+         * Wait for any network activity to complete
+         */
+        waitActivity: async function (idleTime = options.waitIdleTime, idleLoadTime = options.waitIdleLoadTime) {
+            return await requestMonitor.waitForPendingActivity(idleTime, idleLoadTime)
+        },
+    
+        /**
+         * Performs a click on a HTML field.
+         * @param selector css selector or xpath
+         * @param clickOptions ClickOptions
+         */
+        click: async function (selector:string, clickOptions?:ClickOptions) {
+            if (options.waitOnSelectors)
+                await this.wait(selector)
+            const targetElement = await this.queryElementHandle(selector)
+            if (!targetElement) throw new Error('Element not found ' + selector)
+    
+            if (options.useSimulatedClicks) {
+                await currentPage.evaluate(element => element.click(), targetElement)
+            } else {
+                await targetElement.click(clickOptions)
+            }
+    
+            await waitAfter(this)
+        },
+    
+        /**
+         * Types text into a HTML field
+         * @param selector css selector
+         * @param text type text into field
+         * @param typeOptions 'delay' sets delay between each key typed
+         */
+        type: async function (selector:string, text:string, typeOptions?: { delay: number }) {
+            if (options.waitOnSelectors)
+                await this.wait(selector)
+            await currentPage.type(selector, text, typeOptions)
+    
+            await waitAfter(this)
+        },
+    
+        /**
+         * Selects an option within a HTML list.
+         * Filters out any control characters that might be in the list label or value before attempting to match.
+         * 
+         * @param selector css selector
+         * @param selectOption 'value' matches the option value attribute. 'label' matches the option label attribute
+         */
+        select: async function (selector:string, selectOption: {value?:string, label?:string}) {
+            if (options.waitOnSelectors)
+                await this.wait(selector)
+    
+            const selectElement = await currentPage.$(selector)
+            await currentPage.evaluate((selectElement:Element, selectOption) => {
+                let optionElement:HTMLOptionElement
+    
+                // find matching option.  Remove any control characters from option values or labels
+                if (selectOption.label)
+                    optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).label.replace(/[^\x00-\x7F]/g, '') === selectOption.label) as HTMLOptionElement
+                else
+                    optionElement = Array.from(selectElement.children).find(optionElement => (optionElement as HTMLOptionElement).value.replace(/[^\x00-\x7F]/g, "") === selectOption.value) as HTMLOptionElement
+    
+                optionElement.selected = true;
+                const event = new Event('change', {bubbles: true});
+                selectElement.dispatchEvent(event);
+            }, selectElement, selectOption as any);
+    
+            await waitAfter(this)
+        }
     }
 }
 
