@@ -117,7 +117,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
                     for (let resultIndex = 0; resultIndex < xpathResult.snapshotLength; resultIndex++) {
                         resultArray.push(xpathResult.snapshotItem(resultIndex))
                     }
-                    return resultArray;
+                    return resultArray.map(valueMapFn as any);
                 } else {
                     return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
                 }
