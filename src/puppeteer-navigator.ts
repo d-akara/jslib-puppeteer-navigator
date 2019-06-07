@@ -102,7 +102,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
          * @param selector css selector
          * @param valueMapFn function to map elements to values to be returned
          */
-        queryElements: async function (selector:string, valueMapFn:ElementMapFn) {
+        queryElements: async function (selector:string, valueMapFn:ElementMapFn): Promise<any[]> {
             const elements = await currentPage.evaluate((selector, valueMapFnText) => {
                 // Functions can not be passed as parameters to the browser page
                 // So we pass in the function source text and recreate the function within the browser page
@@ -112,7 +112,7 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
                 // create an array of all the found elements and map them using the supplied function
                 // we must map them to new objects since the browser elements can not be serialized back to the Node environment
                 if (isXpath) {
-                    const resultArray = []
+                    const resultArray:any[] = []
                     const xpathResult = document.evaluate(selector, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)
                     for (let resultIndex = 0; resultIndex < xpathResult.snapshotLength; resultIndex++) {
                         resultArray.push(xpathResult.snapshotItem(resultIndex))
