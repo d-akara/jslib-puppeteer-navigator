@@ -91,7 +91,12 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
          * @param selector css selector
          * @param valueMapFn function to map element to return value
          */
-        queryElement: async function (selector:string, valueMapFn:ElementMapFn) { return (await this.queryElements(selector, valueMapFn))[0]},
+        queryElement: async function (selector:string, valueMapFn:ElementMapFn) { 
+            const elements = await this.queryElements(selector, valueMapFn)
+            if (elements.length) return elements[0]
+            return null
+        },
+
         /**
          * Queries elements using selector and uses the provided function to map a list of return values
          * @param selector css selector
@@ -102,10 +107,20 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
                 // Functions can not be passed as parameters to the browser page
                 // So we pass in the function source text and recreate the function within the browser page
                 const valueMapFn = new Function(' return (' + valueMapFnText + ').apply(null, arguments)');
-        
+                const isXpath = selector.startsWith('//')
+
                 // create an array of all the found elements and map them using the supplied function
                 // we must map them to new objects since the browser elements can not be serialized back to the Node environment
-                return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
+                if (isXpath) {
+                    const resultArray = []
+                    const xpathResult = document.evaluate(selector, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)
+                    for (let resultIndex = 0; resultIndex < xpathResult.snapshotLength; resultIndex++) {
+                        resultArray.push(xpathResult.snapshotItem(resultIndex))
+                    }
+                    return resultArray;
+                } else {
+                    return Array.from(document.querySelectorAll(selector)).map(valueMapFn as any);
+                }
             }, selector, valueMapFn.toString());
             return elements;
         },
