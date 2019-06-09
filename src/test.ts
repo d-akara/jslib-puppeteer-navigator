@@ -15,7 +15,13 @@ async function run() {
         const navigator = makePageNavigator(page)
         await navigator.goto('http://localhost:8000')
         await navigator.select(`#pet-select`, {label:'Spider'})
-        //await browser.close();
+
+        const childHandles = await navigator.queryChildrenAsHandles('#divList', e => e.textContent === 'item 1')
+        console.log(childHandles.length)
+        for (const child of childHandles) {
+            const result = await navigator.page().evaluate(e => e.localName, child)
+            console.log(result)
+        }
     });
 }
 

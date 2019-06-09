@@ -1,6 +1,6 @@
 {
   "name": "puppeteer-navigator",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Library to enhance use of Puppeteer",
   "main": "dist/puppeteer-navigator.js",
   "scripts": {
