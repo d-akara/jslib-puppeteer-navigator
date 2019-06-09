@@ -1,7 +1,8 @@
-import { Page, ClickOptions, PageFnOptions, JSHandle } from "puppeteer";
+import { Page, ClickOptions, PageFnOptions, JSHandle, ElementHandle } from "puppeteer";
 
 export type SelectorType = number|string|((...args:any)=>boolean)
 export type ElementMapFn = (element:ElementAny)=>any
+export type ElementMatchFn = (element:ElementAny)=>boolean
 
 /**
  * Options generally applied to all actions
@@ -80,10 +81,36 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
          * Assumes xpath expression starts with '//'
          * @param selector css selector or xpath
          */
-        queryElementHandle: async function (selector: string) {
+        queryElementHandle: async function (selector: string | ElementHandle) {
+            if (typeof selector !== 'string') return selector
+
             if (selector.startsWith('//'))
                 return (await currentPage.$x(selector))[0]
             return await currentPage.$(selector)
+        },
+
+        /**
+         * Uses the selector function to find a matching element
+         * If a context is passed, then the matching element must be a descendant of the context element
+         */
+        queryElementHandleWithFn: async function (selectorFn: ElementMatchFn, context: ElementHandle) {
+            const element = await currentPage.evaluate((context, selectorFnText) => {
+                // Functions can not be passed as parameters to the browser page
+                // So we pass in the function source text and recreate the function within the browser page
+                const selectorFn = new Function(' return (' + selectorFnText + ').apply(null, arguments)');
+
+                // test all descendants of the element
+                if (!context) context = document
+                const descendants = document.evaluate("descendant::*", context, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
+                let descendant = descendants.iterateNext()
+                while(descendant) {
+                    if (selectorFn(descendant)) return descendant
+                    descendant = descendants.iterateNext()
+                }
+
+                return null
+            }, context, selectorFn.toString());
+            return element
         },
     
         /**
@@ -125,6 +152,50 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
             return elements;
         },
         
+        /**
+         * Queries chlldren with all descendants for a match using the descendantFn.
+         * Retuns all children who matched or had a descendant match.
+         * 
+         * This API is used to assist identifying rows in tables, lists, grids etc where we 
+         * want to find a row containing some criteria we can test for with a function
+         * 
+         * @param selector css selector
+         * @param valueMapFn function to map elements to values to be returned
+         */
+        queryChildrenAsHandles: async function (parentSelector:string, descendantFn: (element:Element) => boolean ) {
+            const parentElementHandle = await this.queryElementHandle(parentSelector)
+            if (!parentElementHandle) return []
+
+            const matchingChildren = []
+            const childrenHandles = await parentElementHandle.$x('*')
+            for (const childHandle of childrenHandles) {
+
+                const isMatch = await currentPage.evaluate((childHandle, descendantFnText) => {
+                    // Functions can not be passed as parameters to the browser page
+                    // So we pass in the function source text and recreate the function within the browser page
+                    const descendantFn = new Function(' return (' + descendantFnText + ').apply(null, arguments)');
+
+                    // first test the immediate child
+                    if (descendantFn(childHandle)) return true
+
+                    // test all descendants of the child
+                    const descendants = document.evaluate("descendant::*", childHandle, null, XPathResult.UNORDERED_NODE_ITERATOR_TYPE, null);
+                    let descendant = descendants.iterateNext()
+                    while(descendant) {
+                        if (descendantFn(descendant)) return true
+                        descendant = descendants.iterateNext()
+                    }
+
+                    return false
+                }, childHandle, descendantFn.toString());
+
+                if (isMatch) matchingChildren.push(childHandle)
+            }
+            
+            return matchingChildren;
+        },
+
+
         /**
          * Sets the default chrome puppeteer download path
          * See - https://github.com/GoogleChrome/puppeteer/issues/299
@@ -181,8 +252,8 @@ function _makePageNavigator(currentPage:Page, customOptions:NavigatorOptions = {
          * @param selector css selector or xpath
          * @param clickOptions ClickOptions
          */
-        click: async function (selector:string, clickOptions?:ClickOptions) {
-            if (options.waitOnSelectors)
+        click: async function (selector:string | ElementHandle, clickOptions?:ClickOptions) {
+            if (options.waitOnSelectors && typeof selector === 'string')
                 await this.wait(selector)
             const targetElement = await this.queryElementHandle(selector)
             if (!targetElement) throw new Error('Element not found ' + selector)
