@@ -1,7 +1,9 @@
 {
   "name": "puppeteer-navigator",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Library to enhance use of Puppeteer",
+  "homepage": "https://github.com/dakaraphi/jslib-puppeteer-navigator",
+  "repository": "dakaraphi/jslib-puppeteer-navigator",
   "main": "dist/puppeteer-navigator.js",
   "scripts": {
     "test": "node dist/test.js",
@@ -10,9 +12,9 @@
   "author": "Chad Meadows",
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^3.4.5",
-    "@types/puppeteer": "1.12.4",
-    "puppeteer": "1.15.0",
+    "typescript": "^3.5.3",
+    "@types/puppeteer": "1.19.0",
+    "puppeteer": "1.19.0",
     "jsdoc-to-markdown": "^5.0.0"
   },
   "types": "dist/puppeteer-navigator.d.ts"
