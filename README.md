@@ -33,92 +33,113 @@ export interface ElementAny extends Element {
     [key: string]: any;
 }
 
-/**
- * Create instance of PageNavigator
- * @param currentPage
- * @param customOptions
- */
-export declare function makePageNavigator(page: Page, customOptions?: NavigatorOptions): PageNavigator {
-    updateOptions: (customOptions?: NavigatorOptions) => void;
-    /**
-     * get the current puppeteer page object
-     */
-    page: () => Page;
-    waitAfter: () => Promise<void>;
+export interface Navigator {
+    page(): Page
+    updateOptions(customOptions:NavigatorOptions) : void
     /**
      * Navigate to URL
-     * @param url
-     * @param waitCondition
+     * @param url 
+     * @param waitCondition 
      */
-    goto: (url: string, waitCondition?: string | number | ((...args: any) => boolean) | undefined) => Promise<import("puppeteer").Response>;
+    goto(url:string, waitCondition?:SelectorType) : Promise<Response>
+    
     /**
      * Queries an element using css selector or xpath
      * Assumes xpath expression starts with '//'
      * @param selector css selector or xpath
      */
-    queryElementHandle: (selector: string) => Promise<import("puppeteer").ElementHandle<Element> | null>;
+    queryElementHandle(selector: string | ElementHandle) : Promise<ElementHandle | null>
+
+    /**
+     * Uses the selector function to find a matching element
+     * If a context is passed, then the matching element must be a descendant of the context element
+     */
+    queryElementHandleWithFn(selectorFn: ElementMatchFn, context: ElementHandle) : Promise<Node | null>
+
     /**
      * Query element using selector and uses the provided function to map a return value
      * @param selector css selector
      * @param valueMapFn function to map element to return value
      */
-    queryElement: (selector: string, valueMapFn: ElementMapFn) => Promise<{}>;
+    queryElement(selector:string, valueMapFn:ElementMapFn) : Promise<any[]> 
+
     /**
      * Queries elements using selector and uses the provided function to map a list of return values
      * @param selector css selector
      * @param valueMapFn function to map elements to values to be returned
      */
-    queryElements: (selector: string, valueMapFn: ElementMapFn) => Promise<{}[]>;
+    queryElements(selector:string, valueMapFn:ElementMapFn): Promise<any[]> 
+    
+    /**
+     * Queries chlldren with all descendants for a match using the descendantFn.
+     * Retuns all children who matched or had a descendant match.
+     * 
+     * This API is used to assist identifying rows in tables, lists, grids etc where we 
+     * want to find a row containing some criteria we can test for with a function
+     * 
+     * @param selector css selector
+     * @param valueMapFn function to map elements to values to be returned
+     */
+    queryChildrenAsHandles(parentSelector:string, descendantFn: (element:Element) => boolean ) : Promise<ElementHandle<Element>[]>
+
+
     /**
      * Sets the default chrome puppeteer download path
      * See - https://github.com/GoogleChrome/puppeteer/issues/299
-     * @param {*} downloadPath
+     * @param {*} downloadPath 
      */
-    setDownloadPath: (downloadPath: string) => Promise<any>;
-    scrollElementToBottom: (elementSelector: string, delay: number) => Promise<void>;
+    setDownloadPath(downloadPath:string) : Promise<void>
+    scrollElementToBottom(elementSelector:string, delay:number) : Promise<void>
+
     /**
      * Waits for element to be visible, function to be true or timeout if number
      * @param condition css selector, xpath or function
      */
-    wait: (condition: SelectorType) => Promise<JSHandle | undefined>;
+    wait(condition:SelectorType) : Promise<JSHandle | void>
+
     /**
      * Waits for condition to be true
      * @param selector css selector, xpath or function
      * @param condition function that receives element of selector as input.
      * @param options 'waitAfter' additinoal wait time after condition is true
      */
-    waitFn: (selector: string, condition: (element: ElementAny) => boolean, options?: (PageFnOptions & {
-        waitAfter?: number | undefined;
-    }) | undefined) => Promise<void>;
+    waitFn(selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter?:number}) : Promise<void>
+
     /**
      * Wait for any network activity to complete
      */
-    waitActivity: (idleTime?: number | undefined, idleLoadTime?: number | undefined) => Promise<{}>;
+    waitActivity(idleTime:number|undefined, idleLoadTime:number|undefined) : Promise<unknown>
+
     /**
      * Performs a click on a HTML field.
      * @param selector css selector or xpath
      * @param clickOptions ClickOptions
      */
-    click: (selector: string, clickOptions?: ClickOptions | undefined) => Promise<void>;
+    click(selector:string | ElementHandle, clickOptions?:ClickOptions) : Promise<void>
+
     /**
      * Types text into a HTML field
      * @param selector css selector
      * @param text type text into field
      * @param typeOptions 'delay' sets delay between each key typed
      */
-    type: (selector: string, text: string, typeOptions?: {
-        delay: number;
-    } | undefined) => Promise<void>;
+    type(selector:string, text:string, typeOptions?: { delay: number }) : Promise<void>
+
     /**
      * Selects an option within a HTML list.
      * Filters out any control characters that might be in the list label or value before attempting to match.
-     *
+     * 
      * @param selector css selector
      * @param selectOption 'value' matches the option value attribute. 'label' matches the option label attribute
      */
-    select: (selector: string, selectOption: {
-        value?: string | undefined;
-        label?: string | undefined;
-    }) => Promise<void>;
-};
+    select(selector:string, selectOption: {value?:string, label?:string}) : Promise<void>
+
+
+    /**
+     * Find a frame and return a new navigator for the frame
+     * @param selector frame selector
+     */
+    frameNavigator(selector:string) : Promise<Navigator>
+ 
+}
 ```
