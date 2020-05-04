@@ -1,4 +1,4 @@
-import { Page, Response, ClickOptions, PageFnOptions, JSHandle, ElementHandle, FrameBase } from "puppeteer";
+import { Page, Frame, Response, ClickOptions, PageFnOptions, JSHandle, ElementHandle, FrameBase } from "puppeteer";
 
 export type SelectorType = number|string|((...args:any)=>boolean)
 export type ElementMapFn = (element:ElementAny)=>any
@@ -27,6 +27,11 @@ export interface ElementAny extends Element {
 }
 export interface Navigator {
     page(): Page
+
+    /**
+     * Current frame for navigator
+     */
+    frame(): Frame
     updateOptions(customOptions:NavigatorOptions) : void
     /**
      * Navigate to URL
@@ -41,6 +46,13 @@ export interface Navigator {
      * @param selector css selector or xpath
      */
     queryElementHandle(selector: string | ElementHandle) : Promise<ElementHandle | null>
+
+    /**
+     * Queries an element using css selector or xpath
+     * Assumes xpath expression starts with '//'
+     * @param selector css selector or xpath
+     */
+    queryElementHandles(selector: string | ElementHandle) : Promise<ElementHandle[]>
 
     /**
      * Uses the selector function to find a matching element
@@ -137,14 +149,14 @@ export interface Navigator {
 
 export function makePageNavigator(page:Page, customOptions:NavigatorOptions = {}):Navigator {
     const requestMonitor = startActivityMonitor(page)
-    return _makePageNavigator(page, page, requestMonitor, customOptions)
+    return _makePageNavigator(page, page.mainFrame(), requestMonitor, customOptions)
 }
 /**
  * Create instance of PageNavigator
- * @param frameBase 
+ * @param frame 
  * @param customOptions 
  */
-function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: ActivityMonitor, customOptions:NavigatorOptions = {}) : Navigator {
+function _makePageNavigator(page:Page, frame:Frame, requestMonitor: ActivityMonitor, customOptions:NavigatorOptions = {}) : Navigator {
     const options:NavigatorOptions = { // default options
         "waitUntilVisible": true,
         "waitOnSelectors": true,
@@ -167,12 +179,13 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
     return {
         updateOptions,
 
-        page: function() {return page},
+        page: ()=> page,
+        frame: ()=> frame,
     
         goto: async function (url:string, waitCondition?:SelectorType) {
-            frameBase.goto(url)
+            frame.goto(url)
             // wait for the previous navigation to complete
-            const pageResponse = await frameBase.waitForNavigation()
+            const pageResponse = await frame.waitForNavigation()
             if (waitCondition)
                 await this.wait(waitCondition)
             else await waitAfter(this)
@@ -184,12 +197,21 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
             if (typeof selector !== 'string') return selector
 
             if (selector.startsWith('//'))
-                return (await frameBase.$x(selector))[0]
-            return await frameBase.$(selector)
+                return (await frame.$x(selector))[0]
+            return await frame.$(selector)
+        },
+
+        queryElementHandles: async function (selector: string) {
+            const handles:ElementHandle[] = []
+            if (selector.startsWith('//'))
+                handles.concat(await frame.$x(selector))
+            handles.concat(await frame.$$(selector))
+            
+            return handles
         },
 
         queryElementHandleWithFn: async function (selectorFn: ElementMatchFn, context: ElementHandle) {
-            const element = await frameBase.evaluate((context, selectorFnText) => {
+            const element = await frame.evaluate((context, selectorFnText) => {
                 // Functions can not be passed as parameters to the browser page
                 // So we pass in the function source text and recreate the function within the browser page
                 const selectorFn = new Function(' return (' + selectorFnText + ').apply(null, arguments)');
@@ -215,7 +237,7 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
         },
 
         queryElements: async function (selector:string, valueMapFn:ElementMapFn): Promise<any[]> {
-            const elements = await frameBase.evaluate((selector, valueMapFnText) => {
+            const elements = await frame.evaluate((selector, valueMapFnText) => {
                 // Functions can not be passed as parameters to the browser page
                 // So we pass in the function source text and recreate the function within the browser page
                 const valueMapFn = new Function(' return (' + valueMapFnText + ').apply(null, arguments)');
@@ -245,7 +267,7 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
             const childrenHandles = await parentElementHandle.$x('*')
             for (const childHandle of childrenHandles) {
 
-                const isMatch = await frameBase.evaluate((childHandle, descendantFnText) => {
+                const isMatch = await frame.evaluate((childHandle, descendantFnText) => {
                     // Functions can not be passed as parameters to the browser page
                     // So we pass in the function source text and recreate the function within the browser page
                     const descendantFn = new Function(' return (' + descendantFnText + ').apply(null, arguments)');
@@ -271,30 +293,30 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
         },
 
         setDownloadPath: async function (downloadPath:string) {
-            return await (frameBase as any)._client.send('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: downloadPath});
+            return await (frame as any)._client.send('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: downloadPath});
         },
         
         scrollElementToBottom: async function (elementSelector:string, delay:number) {
-            await frameBase.evaluate( selector => {
+            await frame.evaluate( selector => {
                 const element = document.querySelector(selector);
                 element.scrollTop = 100000; // use large number to force to bottom.  TODO - determine if there is an exact way to get this value
             }, elementSelector );
         
-            await frameBase.waitFor(delay);
+            await frame.waitFor(delay);
         },
 
         wait: async function (condition:SelectorType) {
             if (typeof condition === 'string' || typeof condition ==='function') {
-                return await frameBase.waitFor(condition, {visible:options.waitUntilVisible})
+                return await frame.waitFor(condition, {visible:options.waitUntilVisible})
             }
             if (typeof condition === 'number') {
-                await frameBase.waitFor(condition)
+                await frame.waitFor(condition)
             }
         },
     
         waitFn: async function (selector:string, condition: (element:ElementAny) => boolean, options?: PageFnOptions & {waitAfter?:number}) {
             const selectElement = await this.wait(selector)
-            await frameBase.waitForFunction(condition, options, selectElement as JSHandle)
+            await frame.waitForFunction(condition, options, selectElement as JSHandle)
             if (options && options.waitAfter)
                 await this.wait(options.waitAfter)
         },
@@ -310,7 +332,7 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
             if (!targetElement) throw new Error('Element not found ' + selector)
     
             if (options.useSimulatedClicks) {
-                await frameBase.evaluate(element => element.click(), targetElement)
+                await frame.evaluate(element => element.click(), targetElement)
             } else {
                 await targetElement.click(clickOptions)
             }
@@ -321,7 +343,7 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
         type: async function (selector:string, text:string, typeOptions?: { delay: number }) {
             if (options.waitOnSelectors)
                 await this.wait(selector)
-            await frameBase.type(selector, text, typeOptions)
+            await frame.type(selector, text, typeOptions)
     
             await waitAfter(this)
         },
@@ -330,8 +352,8 @@ function _makePageNavigator(page:Page, frameBase:FrameBase, requestMonitor: Acti
             if (options.waitOnSelectors)
                 await this.wait(selector)
     
-            const selectElement = await frameBase.$(selector)
-            await frameBase.evaluate((selectElement:Element, selectOption) => {
+            const selectElement = await frame.$(selector)
+            await frame.evaluate((selectElement:Element, selectOption) => {
                 let optionElement:HTMLOptionElement
     
                 // find matching option.  Remove any control characters from option values or labels
