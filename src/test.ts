@@ -1,4 +1,4 @@
-import {makePageNavigator, PageNavigator} from "./puppeteer-navigator"
+import {makePageNavigator, Navigator} from "./puppeteer-navigator"
 import puppeteer from "puppeteer"
 import http from 'http'
 import fs from 'fs'
