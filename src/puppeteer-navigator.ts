@@ -173,7 +173,12 @@ function _makePageNavigator(page:Page, frame:Frame, requestMonitor: ActivityMoni
 
     async function waitAfter(pageNavigator: Navigator) {
         if (options.waitIdleTime || options.waitIdleLoadTime) await pageNavigator.waitActivity(options.waitIdleTime, options.waitIdleLoadTime)
-        if (options.waitAfterAction) await pageNavigator.wait(options.waitAfterAction)
+        if (options.waitAfterAction) {
+            await pageNavigator.wait(options.waitAfterAction)
+            // ensure there still isn't network activity before we continue
+            // this might be the case where a delayed action we are waiting for triggers more activity
+            if (options.waitIdleTime || options.waitIdleLoadTime) await pageNavigator.waitActivity(options.waitIdleTime, options.waitIdleLoadTime)
+        }
     }
 
     return {
