@@ -207,10 +207,10 @@ function _makePageNavigator(page:Page, frame:Frame, requestMonitor: ActivityMoni
         },
 
         queryElementHandles: async function (selector: string) {
-            const handles:ElementHandle[] = []
+            let handles:ElementHandle[] = []
             if (selector.startsWith('//'))
-                handles.concat(await frame.$x(selector))
-            handles.concat(await frame.$$(selector))
+                handles = handles.concat(await frame.$x(selector))
+            handles = handles.concat(await frame.$$(selector))
             
             return handles
         },
