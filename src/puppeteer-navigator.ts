@@ -65,7 +65,7 @@ export interface Navigator {
      * @param selector css selector
      * @param valueMapFn function to map element to return value
      */
-    queryElement(selector:string, valueMapFn:ElementMapFn) : Promise<any[]> 
+    queryElement(selector:string, valueMapFn:ElementMapFn) : Promise<any> 
 
     /**
      * Queries elements using selector and uses the provided function to map a list of return values
