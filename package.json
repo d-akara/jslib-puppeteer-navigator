@@ -1,6 +1,6 @@
 {
   "name": "puppeteer-navigator",
-  "version": "3.1.2",
+  "version": "3.1.3",
   "description": "Library to enhance use of Puppeteer",
   "homepage": "https://github.com/dakaraphi/jslib-puppeteer-navigator",
   "repository": "dakaraphi/jslib-puppeteer-navigator",
